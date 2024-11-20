@@ -1,19 +1,25 @@
 package com.postcreater.poster.configuration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.postcreater.poster.generic.ApiResponse;
 import com.postcreater.poster.users.UserDetailsServiceImpl;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -21,10 +27,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
     private final UserDetailsServiceImpl userDetailsService;
     private final AuthTokenFilter authTokenFilter;
-    private final AuthEntryPointJwt unauthorizedHandler;
     private final PasswordEncoder passwordEncoder;
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
@@ -45,22 +51,46 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
-                .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
+                .csrf(AbstractHttpConfigurer::disable)
+                .exceptionHandling(exception -> exception
+                                .authenticationEntryPoint(authenticationEntryPoint())
+                                  )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth ->
                         auth
-                                .requestMatchers("/api/auth/**").permitAll()
-                                .requestMatchers("/api/test/**").permitAll()
-                                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                                .requestMatchers("/api/public/**").permitAll()
+                                .requestMatchers("/api/auth/**",
+                                                 "/api/test/**",
+                                                 "/swagger-ui/**",
+                                                 "/v3/api-docs/**",
+                                                  "/api/public/**").permitAll()
                                 .anyRequest().authenticated()
-                );
-
-        http.authenticationProvider(authenticationProvider());
-        http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
+                )
+                .headers(httpSecurityHeadersConfigurer -> httpSecurityHeadersConfigurer.frameOptions(frameOptionsConfig -> frameOptionsConfig.disable()))
+                .authenticationProvider(authenticationProvider()).addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public AuthenticationEntryPoint authenticationEntryPoint() {
+        return (request, response, authException) -> {
+            try {
+                response.setContentType("application/json;charset=UTF-8");
+                response.setStatus(HttpStatus.FORBIDDEN.value());
+
+                ApiResponse<String> apiResponse = ApiResponse.<String>builder()
+                        .data(authException.getMessage())
+                        .message("Forbidden!")
+                        .success(false)
+                        .build();
+
+                ObjectMapper mapper = new ObjectMapper();
+                mapper.writeValue(response.getWriter(), apiResponse);
+
+            } catch (Exception e) {
+                log.error("Error writing authentication error response", e);
+            }
+        };
     }
 }

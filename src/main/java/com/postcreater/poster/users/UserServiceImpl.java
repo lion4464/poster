@@ -52,7 +52,7 @@ public class UserServiceImpl implements UserService{
     public AuthResponse login(LoginRequest request) throws BadCredentialsException {
         Optional<UserEntity> optional = findByUsername(request.getUsername());
         if (optional.isEmpty() || !passwordEncoder.matches(request.getPassword(), optional.get().getPassword()))
-            throw new BadCredentialsException(request.getUsername());
+            throw new BadCredentialsException(request.getUsername()+" couldn't find our db");
         UserDetailsImpl userDetails = generateUserDetail(optional.get());
         UserEntity user = userDetails.getUser();
         String jwt = jwtUtils.generateJwtToken(userDetails);
